@@ -5,10 +5,18 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
+    "accelerate>=1.11.0",
     "crewai[tools]>=0.1.6",
+    "huggingface-hub[hf-xet]>=0.35.3",
     "ipykernel>=7.0.1",
+    "ipywidgets>=8.1.7",
+    "pandas>=2.3.3",
+    "protobuf>=6.33.0",
+    "sacremoses>=0.1.1",
+    "tokenizers>=0.22.1",
     "torch>=2.5.1",
     "torchvision>=0.20.1",
+    "transformers>=4.57.1",
 ]
 
 [[tool.uv.index]]
