@@ -2,6 +2,8 @@
 .env
 latest_ai_development
 dataset
-/draft.ipynb
+/notebook/demonstration.ipynb
 
 /storage
+
+/test.py

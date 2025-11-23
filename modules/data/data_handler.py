@@ -3,7 +3,7 @@ from pathlib import Path
 import tiktoken
 
 
-class CaseDataHandler:
+class DataHandler:
     """
     A class to load all notes for a single patient
     and provide them in token-limit-aware chunks.

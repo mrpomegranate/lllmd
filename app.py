@@ -3,7 +3,7 @@ import sys
 import tiktoken
 
 # Import classes
-from modules.data.data_handler import CaseDataHandler
+from modules.data.data_handler import DataHandler
 from modules.interface.summary_llm import Summarizer
 from modules.interface.agent_rag import MedicalResearchAgent
 
@@ -64,7 +64,7 @@ def group_summaries_into_chunks(summaries, max_tokens=3000):
 print("--- Initializing Data Handler ---")
 
 # Initialize DataHandler
-data_handler = CaseDataHandler(data_dir="../storage", chunk_size_tokens=7000)  # 3000
+data_handler = DataHandler(data_dir="../storage", chunk_size_tokens=7000)  # 3000
 
 # Step 2: Get a note
 # Getting notes from patient and divided them in chunks
