@@ -1,0 +1,111 @@
+Okay, I will analyze the patient case summary, extract key information, generate a prioritized differential diagnosis, identify red flags, suggest next steps, and provide supporting evidence from credible sources. I will then return a structured JSON-formatted report.
+{
+  "Patient Summary": {
+    "Demographics": "17-year-old male",
+    "History of Present Illness": "Intermittent palpitations over the past 3-4 months without identifiable triggers, most recently 2 days prior to presentation, accompanied by transient shortness of breath which resolved upon cessation of activity. Denies chest pain, diaphoresis, visual disturbances, syncope, or recent weight change. Reports non-prescription Adderall use multiple times weekly and regular consumption of caffeinated beverages.",
+    "Medical History": "No significant past medical history reported.",
+    "Family History": "Hyperthyroidism in both parents and paternal cardiac event within recent memory.",
+    "Social History": "Full-time college student. Occasional alcohol consumption (beer on weekends). Never smoked. Infrequent recreational marijuana use. Actively participates in sports. Sexually active with a long-term partner, using condoms consistently.",
+    "Physical Exam": "Not provided.",
+    "Diagnostics": "No specific lab results or imaging studies were provided."
+  },
+  "Risk Factors": {
+    "Age": "Adolescent age (17 years) increases the likelihood of certain conditions such as supraventricular tachycardia (SVT).",
+    "Medications/Substances": "Non-prescription Adderall use (stimulant) and regular caffeine consumption are significant risk factors for palpitations and cardiac arrhythmias. Recreational marijuana use has potential cardiovascular effects.",
+    "Lifestyle": "Active participation in sports could be a trigger for palpitations if underlying cardiac condition exists. Occasional alcohol consumption is a moderate risk factor.",
+    "Family History": "Family history of hyperthyroidism and paternal cardiac event increases risk for thyroid disorders and inherited cardiac conditions (e.g., Long QT syndrome, hypertrophic cardiomyopathy).",
+    "Comorbidities": "None reported but undiagnosed conditions may be present."
+  },
+  "Red Flags": [
+    "Palpitations accompanied by shortness of breath, even if transient, require careful evaluation.",
+    "Family history of cardiac event raises concern for possible inherited cardiac conditions.",
+    "Non-prescription stimulant use (Adderall) is a major red flag and needs to be addressed immediately.",
+    "Undiagnosed cause of palpitations and dyspnea."
+  ],
+  "Differential Diagnosis (prioritized)": [
+    {
+      "Diagnosis": "Supraventricular Tachycardia (SVT)",
+      "Likelihood": "Moderate to High",
+      "Rationale": "Common cause of palpitations in young adults. Can present with sudden onset and offset. Shortness of breath can occur during episodes. Stimulant use can trigger SVT. Family history may be relevant to genetic predispositions.",
+      "Supporting Evidence": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8490214/"
+    },
+    {
+      "Diagnosis": "Atrial Fibrillation/Flutter",
+      "Likelihood": "Low to Moderate",
+      "Rationale": "Less common in this age group but possible, especially with stimulant use. Can present with palpitations and shortness of breath. Alcohol and caffeine could be contributing factors.",
+      "Supporting Evidence": "https://www.ahajournals.org/doi/full/10.1161/CIRCEP.117.004932"
+    },
+    {
+      "Diagnosis": "Anxiety/Panic Disorder",
+      "Likelihood": "Moderate",
+      "Rationale": "Palpitations are a common symptom of anxiety and panic attacks. Stress from college and other lifestyle factors could contribute. However, organic causes must be ruled out first.",
+      "Supporting Evidence": "https://www.mayoclinic.org/diseases-conditions/anxiety/symptoms-causes/syc-20350961"
+    },
+    {
+      "Diagnosis": "Hyperthyroidism",
+      "Likelihood": "Moderate",
+      "Rationale": "Family history of hyperthyroidism increases the risk. Palpitations are a common symptom. Other symptoms (e.g., weight loss, heat intolerance) are absent in the history, but further investigation is needed.",
+      "Supporting Evidence": "https://www.ncbi.nlm.nih.gov/books/NBK537039/"
+    },
+    {
+      "Diagnosis": "Long QT Syndrome (LQTS)",
+      "Likelihood": "Low",
+      "Rationale": "Family history of cardiac event raises suspicion for inherited cardiac conditions. LQTS can cause palpitations and syncope (not reported), but the risk of sudden cardiac death warrants exclusion.",
+      "Supporting Evidence": "https://www.ncbi.nlm.nih.gov/books/NBK1124/"
+    },
+    {
+      "Diagnosis": "Hypertrophic Cardiomyopathy (HCM)",
+      "Likelihood": "Low",
+      "Rationale": "Although syncope or chest pain were not described, HCM should be considered given the palpitations and family history. Exertional dyspnea may be associated with HCM.",
+      "Supporting Evidence": "https://www.ncbi.nlm.nih.gov/books/NBK1769/"
+    },
+    {
+      "Diagnosis": "Stimulant-induced Arrhythmia",
+      "Likelihood": "High",
+      "Rationale": "Adderall and caffeine are known to increase heart rate and blood pressure, potentially triggering arrhythmias. This is a high priority given the patient's history.",
+      "Supporting Evidence": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6326427/"
+    }
+  ],
+  "Supporting Evidence": {
+    "SVT": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8490214/",
+    "Atrial Fibrillation/Flutter": "https://www.ahajournals.org/doi/full/10.1161/CIRCEP.117.004932",
+    "Anxiety/Panic Disorder": "https://www.mayoclinic.org/diseases-conditions/anxiety/symptoms-causes/syc-20350961",
+    "Hyperthyroidism": "https://www.ncbi.nlm.nih.gov/books/NBK537039/",
+    "Long QT Syndrome": "https://www.ncbi.nlm.nih.gov/books/NBK1124/",
+    "Hypertrophic Cardiomyopathy": "https://www.ncbi.nlm.nih.gov/books/NBK1769/",
+    "Stimulant-induced Arrhythmia": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6326427/"
+  },
+  "Recommended Next Steps": {
+    "Immediate Actions": [
+      "Advise the patient to immediately discontinue non-prescription Adderall use. Provide education on the risks of stimulant use and potential cardiac consequences.",
+      "Advise the patient to limit or eliminate caffeine consumption."
+    ],
+    "Diagnostics": [
+      "12-lead ECG: To evaluate for arrhythmias, prolonged QT interval, and other abnormalities.",
+      "24-48 hour Holter monitor: To capture intermittent arrhythmias during daily activities.",
+      "Thyroid function tests (TSH, Free T4): To rule out hyperthyroidism.",
+      "Echocardiogram: To assess cardiac structure and function; evaluate for hypertrophic cardiomyopathy.",
+      "Consider event monitor if Holter is non-diagnostic and symptoms are infrequent.",
+      "Urine drug screen: To confirm Adderall use and screen for other substances.",
+      "Electrolyte panel (Potassium, Magnesium, Calcium): To rule out electrolyte imbalances that could contribute to arrhythmias."
+    ],
+    "Lifestyle Modifications": [
+      "Stress management techniques (e.g., mindfulness, yoga).",
+      "Ensure adequate sleep hygiene.",
+      "Maintain regular physical activity but monitor for symptom exacerbation.",
+      "Cautious return to sports only after cardiac evaluation."
+    ],
+    "Medication Modifications": [
+      "Avoidance of stimulants and excessive caffeine is crucial.",
+      "If anxiety is a contributing factor after cardiac causes are ruled out, consider a trial of selective serotonin reuptake inhibitors (SSRIs) under the guidance of a mental health professional, being mindful of potential QT prolongation."
+    ],
+    "Specialist Referrals": [
+      "Cardiology referral: For evaluation of palpitations, potential arrhythmias, and family history of cardiac events. Consider electrophysiology (EP) study if arrhythmias are documented and symptomatic.",
+      "Endocrinology referral: If thyroid function tests are abnormal.",
+      "Mental health professional: To address potential anxiety or substance use issues."
+    ],
+    "Follow-up": [
+      "Close follow-up with primary care physician to monitor symptoms and adjust management as needed."
+    ]
+  }
+}

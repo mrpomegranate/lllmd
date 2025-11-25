@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediMind RAG - Clinical Interface</title>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        .step-active { color: #2563eb; font-weight: 600; }
+        .fade-in { animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-900 p-4 md:p-8">
+
+    <!-- Header -->
+    <header class="max-w-5xl mx-auto mb-8 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white shadow-md">
+                <i data-lucide="stethoscope" class="w-5 h-5"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold text-slate-900 tracking-tight">MediMind RAG</h1>
+                <p class="text-xs text-slate-500 font-medium">Clinical Reasoning Engine</p>
+            </div>
+        </div>
+        <div class="hidden md:flex items-center gap-2 text-sm text-slate-500" id="step-indicator">
+            <!-- Steps injected by JS -->
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main id="app-root" class="max-w-5xl mx-auto space-y-6 relative">
+        <!-- Content injected by JS -->
+    </main>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        // --- MOCK DATA ---
+        const MOCK_CASE_DATA = [
+            { pn_num: "00000", history: "17-year-old male, has come to the student health clinic complaining of heart pounding. Began 2-3 months ago, sudden, intermittent..." },
+            { pn_num: "00001", history: "17 yo male with recurrent palpitations for the past 3 mo lasting about 3 - 4 min. Light headedness, pressure in the chest..." },
+            { pn_num: "00002", history: "Dillon Cleveland is a 17 y.o. male patient with no significant PMH who presents with complaints of heart pounding..." },
+        ];
+
+        // --- STATE MANAGEMENT ---
+        const state = {
+            step: 1,
+            file: null,
+            selectedCase: 0,
+            logs: []
+        };
+
+        // --- RENDER FUNCTIONS ---
+
+        function renderSteps() {
+            const steps = ["Upload", "Review", "Analysis", "Diagnosis"];
+            const container = document.getElementById('step-indicator');
+            container.innerHTML = steps.map((label, idx) => {
+                const stepNum = idx + 1;
+                const isActive = state.step >= stepNum ? 'text-blue-600 font-semibold' : '';
+                const icon = idx < steps.length - 1 ? '<i data-lucide="chevron-right" class="w-3 h-3 mx-1"></i>' : '';
+                return `<span class="flex items-center ${isActive}">${stepNum}. ${label}</span>${icon}`;
+            }).join('');
+            lucide.createIcons();
+        }
+
+        function renderUpload() {
+            return `
+                <div class="bg-white rounded-xl border border-dashed border-2 border-slate-300 hover:border-blue-500 transition-colors cursor-pointer p-12 text-center shadow-sm fade-in" onclick="handleFileUpload()">
+                    <div class="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-4 text-blue-600 mx-auto">
+                        <i data-lucide="upload" class="w-8 h-8"></i>
+                    </div>
+                    <h2 class="text-xl font-semibold text-slate-800">Upload Patient Notes</h2>
+                    <p class="text-slate-500 mt-2 mb-6">Select your <code class="bg-slate-200 px-1 py-0.5 rounded text-sm">patient_notes.csv</code> file to begin analysis.</p>
+                    <button class="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition-all shadow-sm">
+                        Browse Files
+                    </button>
+                </div>
+            `;
+        }
+
+        function renderReview() {
+            const rows = MOCK_CASE_DATA.map(row => `
+                <tr class="hover:bg-slate-50/80 transition-colors border-b border-slate-100 last:border-0">
+                    <td class="px-6 py-4 font-mono text-slate-600 text-sm">${row.pn_num}</td>
+                    <td class="px-6 py-4 text-slate-700 text-sm truncate max-w-md">${row.history}</td>
+                </tr>
+            `).join('');
+
+            return `
+                <div class="space-y-6 fade-in">
+                    <!-- Controls -->
+                    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div class="flex items-center gap-4">
+                            <div class="p-2 bg-emerald-50 rounded-lg text-emerald-600">
+                                <i data-lucide="file-text" class="w-6 h-6"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold text-slate-900">patient_notes.csv</h3>
+                                <p class="text-sm text-slate-500">143 KB • Loaded Successfully</p>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-center gap-3 bg-slate-50 p-1 rounded-lg border border-slate-200">
+                            <span class="text-sm font-medium text-slate-600 pl-3">Select Case ID:</span>
+                            <select onchange="state.selectedCase = this.value" class="bg-white border-none text-sm font-semibold rounded-md py-1.5 pl-2 pr-8 focus:ring-2 focus:ring-blue-500 shadow-sm outline-none">
+                                ${[0,1,2,3,4,5].map(n => `<option value="${n}">Case ${n}</option>`).join('')}
+                            </select>
+                        </div>
+
+                        <button onclick="startAnalysis()" class="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-blue-700 flex items-center gap-2 shadow-sm transition-all">
+                            <i data-lucide="brain" class="w-4 h-4"></i> Start Analysis
+                        </button>
+                    </div>
+
+                    <!-- Table -->
+                    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                            <h3 class="font-semibold text-slate-800">Patient Notes Preview</h3>
+                            <span class="bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-full text-xs font-medium">${MOCK_CASE_DATA.length} Records Found</span>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left">
+                                <thead class="bg-slate-50 text-slate-500 text-xs uppercase font-semibold">
+                                    <tr>
+                                        <th class="px-6 py-3">PN #</th>
+                                        <th class="px-6 py-3">History Snippet</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${rows}</tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderProcessing() {
+            return `
+                <div class="max-w-3xl mx-auto fade-in">
+                    <div class="text-center mb-8">
+                        <div class="inline-flex items-center justify-center w-16 h-16 bg-blue-50 text-blue-600 rounded-full mb-4 relative">
+                            <i data-lucide="activity" class="w-8 h-8 animate-pulse"></i>
+                            <span class="absolute top-0 right-0 flex h-3 w-3">
+                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                                <span class="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                            </span>
+                        </div>
+                        <h2 class="text-2xl font-bold text-slate-900">Analyzing Case ${state.selectedCase}</h2>
+                        <p class="text-slate-500 mt-1">Running multi-agent diagnosis pipeline...</p>
+                    </div>
+
+                    <div class="bg-slate-900 text-slate-300 font-mono text-xs sm:text-sm p-6 shadow-2xl border-slate-800 rounded-xl">
+                        <div class="flex items-center gap-2 text-slate-500 mb-4 border-b border-slate-800 pb-2">
+                            <i data-lucide="terminal" class="w-4 h-4"></i>
+                            <span>pipeline_logs.txt</span>
+                        </div>
+                        <div class="h-64 overflow-y-auto space-y-2 scrollbar-hide" id="logs-container">
+                            <!-- Logs injected here -->
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderResults() {
+            return `
+                <div class="space-y-6 fade-in">
+                    <div class="flex items-center justify-between">
+                        <h2 class="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                            <i data-lucide="check-circle" class="text-emerald-500 w-7 h-7"></i>
+                            Diagnosis Complete
+                        </h2>
+                        <button onclick="resetApp()" class="text-sm font-medium text-slate-500 hover:text-blue-600 transition-colors">
+                            Analyze Another Case
+                        </button>
+                    </div>
+
+                    <div class="grid md:grid-cols-3 gap-6">
+                        <!-- Main Report -->
+                        <div class="md:col-span-2 bg-white rounded-xl border border-slate-200 shadow-lg p-8 border-t-4 border-t-blue-600">
+                            <div class="flex items-center justify-between mb-6">
+                                <h3 class="text-lg font-bold text-slate-900">Final Diagnostic Report</h3>
+                                <span class="bg-emerald-100 text-emerald-700 px-2.5 py-0.5 rounded-full text-xs font-medium">Confidence: High</span>
+                            </div>
+                            
+                            <div class="prose prose-slate prose-sm max-w-none text-slate-700">
+                                <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6 rounded-r">
+                                    <h4 class="text-blue-800 font-semibold m-0 text-sm uppercase tracking-wide">Top Candidate</h4>
+                                    <p class="text-blue-900 text-xl font-bold m-0 mt-1">Supraventricular Tachycardia (SVT)</p>
+                                </div>
+                                
+                                <h4 class="font-bold text-slate-900 text-base mb-2 flex items-center gap-2"><i data-lucide="search" class="w-4 h-4"></i> Supporting Evidence</h4>
+                                <ul class="list-disc pl-5 space-y-1 mb-6">
+                                    <li><strong>Symptoms:</strong> Recurrent palpitations, sudden onset/offset ("paroxysmal"), shortness of breath.</li>
+                                    <li><strong>Triggers:</strong> Stress, exertion, but also at rest.</li>
+                                    <li><strong>Risk Factors:</strong> Stimulant use (Adderall/caffeine).</li>
+                                    <li><strong>Demographics:</strong> 17-year-old male (classic age of onset).</li>
+                                </ul>
+
+                                <h4 class="font-bold text-slate-900 text-base mb-2 flex items-center gap-2"><i data-lucide="clipboard-list" class="w-4 h-4"></i> Recommended Next Steps</h4>
+                                <ol class="list-decimal pl-5 space-y-1">
+                                    <li><strong>ECG (Electrocardiogram):</strong> Essential to check for pre-excitation (WPW).</li>
+                                    <li><strong>Holter Monitor:</strong> 24-48h monitoring for intermittent arrhythmias.</li>
+                                    <li><strong>Echocardiogram:</strong> Rule out structural defects.</li>
+                                    <li><strong>Cardiology Referral:</strong> For potential EP study.</li>
+                                </ol>
+                            </div>
+                        </div>
+
+                        <!-- Stats / Meta -->
+                        <div class="space-y-6">
+                            <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+                                <h4 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">Pipeline Stats</h4>
+                                <div class="space-y-4">
+                                    <div>
+                                        <div class="flex justify-between text-sm mb-1">
+                                            <span class="text-slate-600">Model Confidence</span>
+                                            <span class="font-bold text-slate-900">92%</span>
+                                        </div>
+                                        <div class="w-full bg-slate-100 rounded-full h-2">
+                                            <div class="bg-emerald-500 h-2 rounded-full" style="width: 92%"></div>
+                                        </div>
+                                    </div>
+                                    <div class="flex justify-between items-center pt-4 border-t border-slate-100">
+                                        <span class="text-sm text-slate-600">Time Taken</span>
+                                        <span class="text-sm font-mono font-bold text-slate-900">14.2s</span>
+                                    </div>
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-sm text-slate-600">LLM Used</span>
+                                        <span class="text-xs bg-slate-100 px-2 py-1 rounded font-mono text-slate-700">DeepSeek-R1-8B</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // --- CONTROLLER ---
+
+        function updateView() {
+            const root = document.getElementById('app-root');
+            renderSteps();
+            
+            if (state.step === 1) root.innerHTML = renderUpload();
+            else if (state.step === 2) root.innerHTML = renderReview();
+            else if (state.step === 3) root.innerHTML = renderProcessing();
+            else if (state.step === 4) root.innerHTML = renderResults();
+            
+            lucide.createIcons();
+        }
+
+        function handleFileUpload() {
+            // Simulate upload delay
+            state.file = "patient_notes.csv";
+            state.step = 2;
+            updateView();
+        }
+
+        function startAnalysis() {
+            state.step = 3;
+            updateView();
+            
+            const logs = [
+                "Initializing ClinicalDataProcessor...",
+                `Loading Case ID: ${state.selectedCase} notes...`,
+                "Found 3 patient notes. Smart chunking initiated...",
+                "Loading Model A: deepseek-ai/DeepSeek-R1-Distill-Llama-8B...",
+                "Model A (8-bit) loaded on CUDA:0",
+                "Generating clinical abstract (Batch size: 4)...",
+                "Abstract generation complete.",
+                "Initializing DiagnosisCrew Agent...",
+                "Agent [Senior Medical Diagnostician] assigned task.",
+                "Agent is searching DuckDuckGo for 'SVT symptoms in 17yo male'...",
+                "Agent is searching DuckDuckGo for 'Adderall induced palpitations'...",
+                "Synthesizing final diagnosis report...",
+                "Process Complete."
+            ];
+
+            let i = 0;
+            const container = document.getElementById('logs-container');
+            
+            function addLog() {
+                if (i < logs.length) {
+                    const div = document.createElement('div');
+                    div.className = "animate-in slide-in-from-left-2 duration-300";
+                    div.innerHTML = `<span class="text-blue-500 mr-2">[${new Date().toLocaleTimeString()}]</span>${logs[i]}`;
+                    if(container) {
+                        container.appendChild(div);
+                        container.scrollTop = container.scrollHeight;
+                    }
+                    i++;
+                    // Variable speed to feel realistic
+                    setTimeout(addLog, i < 4 ? 800 : i < 8 ? 1500 : 600);
+                } else {
+                    setTimeout(() => {
+                        state.step = 4;
+                        updateView();
+                    }, 1000);
+                }
+            }
+            addLog();
+        }
+
+        function resetApp() {
+            state.step = 2;
+            state.logs = [];
+            updateView();
+        }
+
+        // Initial Render
+        updateView();
+
+    </script>
+</body>
+</html>

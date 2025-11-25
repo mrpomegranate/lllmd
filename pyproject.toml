@@ -6,21 +6,30 @@ readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "accelerate>=1.11.0",
-    "crewai[tools]>=0.1.6",
-    "huggingface-hub[hf-xet]>=0.35.3",
+    "bitsandbytes>=0.48.2",
+    "crewai>=0.148.0",
+    "ddgs>=9.9.1",
+    "duckduckgo-search>=8.1.1",
+    "fastapi>=0.122.0",
+    "google-generativeai>=0.8.5",
+    "hf-xet>=1.2.0",
     "ipykernel>=7.0.1",
-    "ipywidgets>=8.1.7",
+    "ipywidgets>=8.1.8",
+    "langchain>=0.3.27",
+    "langchain-community>=0.3.27",
+    "litellm>=1.72.6",
     "pandas>=2.3.3",
-    "protobuf>=6.33.0",
-    "sacremoses>=0.1.1",
-    "tokenizers>=0.22.1",
-    "torch>=2.5.1",
-    "torchvision>=0.20.1",
+    "python-dotenv>=1.2.1",
+    "python-multipart>=0.0.20",
+    "sentencepiece>=0.2.1",
+    "torch>=2.9.1",
+    "torchvision>=0.24.1",
     "transformers>=4.57.1",
+    "uvicorn>=0.38.0",
 ]
 
 [[tool.uv.index]]
-url = "https://download.pytorch.org/whl/cu121"
+url = "https://download.pytorch.org/whl/cu126"
 
 [[tool.uv.index]]
 url = "https://pypi.org/simple"
