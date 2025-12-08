@@ -9,7 +9,7 @@ class Summarizer:
     This is optimized for Apple Silicon (M1/M2/M3) with Metal.
     """
 
-    def __init__(self, repo_id, gguf_filename, local_model_dir="storage/model_download"):
+    def __init__(self, repo_id, gguf_filename, chat_format=None, local_model_dir="storage/model_download"):
         """
         Initializes the summarizer by downloading and loading the GGUF model.
         :param repo_id: Hugging Face repo ID
@@ -23,7 +23,7 @@ class Summarizer:
         print(f"Loading model from: {self.model_path}")
 
         # Load model into memory
-        self.llm = Llama(model_path=self.model_path, n_gpu_layers=-1, n_ctx=8194, verbose=False)  # 4096
+        self.llm = Llama(model_path=self.model_path, n_gpu_layers=-1, n_ctx=9000, chat_format=chat_format, verbose=False)  # 4096 8194
 
         print(f"Model {gguf_filename} loaded successfully.")
 

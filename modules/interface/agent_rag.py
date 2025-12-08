@@ -22,6 +22,45 @@ class MedicalResearchAgent:
         to verify facts and find guidelines.
         :param clinical_brief: Final summarization of clinical note
         """
+        # Formatting the output
+        json_structure = """
+                {
+                  "Patient Summary": {
+                    "Demographics": "...",
+                    "History of Present Illness": "...",
+                    "Medical History": "...",
+                    "Family History": "...",
+                    "Social History": "...",
+                    "Physical Exam": "...",
+                    "Diagnostics": "..."
+                  },
+                  "Risk Factors": {
+                    "Age": "...",
+                    "Medications/Substances": "...",
+                    "Lifestyle": "...",
+                    "Family History": "...",
+                    "Comorbidities": "..."
+                  },
+                  "Red Flags": [ "flag1", "flag2" ],
+                  "Differential Diagnosis (prioritized)": [
+                    {
+                      "Diagnosis": "...",
+                      "Likelihood": "High/Moderate/Low",
+                      "Rationale": "...",
+                      "Supporting Evidence": "URL"
+                    }
+                  ],
+                  "Recommended Next Steps": {
+                    "Immediate Actions": [],
+                    "Diagnostics": [],
+                    "Lifestyle Modifications": [],
+                    "Medication Modifications": [],
+                    "Specialist Referrals": [],
+                    "Follow-up": []
+                  }
+                }
+                """
+
         # Define the agent
         researcher = Agent(
             role='Senior Medical Research Specialist',
@@ -47,13 +86,13 @@ class MedicalResearchAgent:
                guidelines (NIH, NICE, or similar).
             3. Verify if the treatment mentioned in the brief aligns with 
                standard guidelines.
+               
+            Use this exact JSON structure for your output:
+            {json_structure}
+            
+            Do not add markdown formatting. Just return the raw JSON string.
             """,
-            expected_output="""
-            A verified report containing:
-            - Key Clinical Issues identified.
-            - Summary of latest Guidelines for each issue (with source URLs).
-            - A "Verification Check" stating if the patient's status aligns with evidence.
-            """,
+            expected_output="A valid JSON object matching the provided schema.",
             agent=researcher
         )
 
@@ -67,4 +106,4 @@ class MedicalResearchAgent:
         # Run the agent
         print("\n--- Agent Activated: Researching Guidelines ---")
         result = crew.kickoff()
-        return result
+        return result.raw

@@ -5,5 +5,6 @@ dataset
 /notebook/demonstration.ipynb
 
 /storage
+/logs
 
 /test.py
