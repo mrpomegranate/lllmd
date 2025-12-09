@@ -4,13 +4,12 @@ import re
 import shutil
 import pandas as pd
 import torch
-import requests
-from bs4 import BeautifulSoup
 from typing import List, Optional, Dict, Any
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 # ML & Agent Imports
@@ -83,7 +82,7 @@ class ClinicalSummarizer:
 
         try:
             tokenizer = AutoTokenizer.from_pretrained(model_id, token=hf_token)
-            
+
             # CRITICAL FIX: Set pad_token before pipeline creation
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token
@@ -118,75 +117,142 @@ class ClinicalSummarizer:
             """
             if not chunks: return "No text to summarize."
 
-            try:
-                model, tokenizer = self._load_model(model_id)
+            if "BioMistral" in model_id:
+                try:
+                    model, tokenizer = self._load_model(model_id)
 
-                pipe = pipeline(
-                    "text-generation",
-                    model=model,
-                    tokenizer=tokenizer,
-                    max_new_tokens=512,
-                    do_sample=False,
-                    temperature=0.1,
-                    repetition_penalty=1.2,
-                    return_full_text=False
-                )
+                    # PIPELINE: Ensure strict decoding to prevent "wandering"
+                    pipe = pipeline(
+                        "text-generation",
+                        model=model,
+                        tokenizer=tokenizer,
+                        max_new_tokens=600,
+                        do_sample=True,
+                        temperature=0.2,     # LOWER temp to make it strictly follow instructions
+                        top_p=0.9,
+                        repetition_penalty=1.1,
+                        return_full_text=False
+                    )
 
-                # --- STATE: This holds the evolving summary ---
-                current_summary = "No prior information."
+                    current_summary = "No prior information."
 
-                for i, chunk in enumerate(chunks):
-                    print(f"Processing chunk {i+1}/{len(chunks)} with {model_id} (Refine Step)...")
+                    for i, chunk in enumerate(chunks):
+                        print(f"Processing chunk {i+1}/{len(chunks)} with {model_id}...")
 
-                    # --- DYNAMIC PROMPT: Changes based on whether we have a summary yet ---
-                    if i == 0:
-                        # First chunk: Standard Extraction
-                        system_instruction = """You are an expert Clinical Documentation Specialist.
-                        GOAL: Extract key clinical data into a structured abstract.
-                        STRICT FORMAT:
-                        Demographics: [Age, Sex]
-                        Medical History: [Conditions, Meds, Allergies]
-                        Family History: [Conditions]
-                        Social History: [Lifestyle]
-                        History of Present Illness: [Symptoms, Timeline]"""
+                        if i == 0:
+                            # FIX 1: Simplified, punchy instruction
+                            instruction = (
+                                "You are a Clinical Documentation Specialist. "
+                                "Extract a structured clinical abstract from the note below. "
+                                "Use EXACTLY these headers: Demographics, Medical History, Family History, Social History, HPI."
+                            )
+                            input_text = f"CLINICAL NOTE:\n{chunk}"
 
-                        user_message = f"PATIENT NOTE:\n{chunk}\n\nSUMMARY:"
-                    else:
-                        # Subsequent chunks: UPDATE the existing summary
-                        system_instruction = """You are an expert Clinical Documentation Specialist.
-                        GOAL: You are given an EXISTING SUMMARY and a NEW NOTE from a different doctor.
-                        INSTRUCTION: Update the Existing Summary with ONLY NEW information found in the New Note.
-                        - If the New Note repeats information already in the Summary, IGNORE IT.
-                        - Keep the same strict format.
-                        - Merge findings logically."""
+                            # FIX 2: PREFILL THE PROMPT
+                            # We end the prompt with "Demographics:" to force the model into the format immediately.
+                            prompt = f"[INST] {instruction}\n\n{input_text} [/INST]\n\nDemographics:"
+                        else:
+                            instruction = "Update the existing summary with new info. Keep the exact same format."
+                            input_text = f"EXISTING SUMMARY:\n{current_summary}\n\nNEW NOTE:\n{chunk}"
+                            prompt = f"[INST] {instruction}\n\n{input_text} [/INST]\n\nUpdated Summary:"
 
-                        user_message = f"EXISTING SUMMARY:\n{current_summary}\n\nNEW NOTE:\n{chunk}\n\nUPDATED SUMMARY:"
+                        try:
+                            outputs = pipe(prompt)
+                            new_text = outputs[0]['generated_text'].strip()
 
-                    # Construct Prompt
-                    try:
-                        messages = [{"role": "system", "content": system_instruction}, {"role": "user", "content": user_message}]
-                        prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-                    except:
-                        prompt = f"[INST] {system_instruction}\n\n{user_message} [/INST]"
+                            # FIX 3: Re-attach the prefilled header if it was the first chunk
+                            if i == 0:
+                                new_text = "Demographics: " + new_text
 
-                    # Generate
-                    output = pipe(prompt)[0]['generated_text'].strip()
+                            print(f"--- Chunk {i+1} Output ({len(new_text)} chars) ---")
 
-                    # Update the state variable with the new, refined summary
-                    if output:
-                        current_summary = output
+                            # Safety check to ensure we don't overwrite with empty garbage
+                            if len(new_text) > 20:
+                                current_summary = new_text
+                            else:
+                                print("⚠️ Warning: Model returned empty text. Skipping update.")
 
-                self._cleanup(model, tokenizer)
-                return current_summary
+                        except Exception as e:
+                            print(f"Error generating chunk {i}: {e}")
 
-            except Exception as e:
-                if "CUDA out of memory" in str(e):
-                    gc.collect()
-                    torch.cuda.empty_cache()
-                    raise HTTPException(status_code=503, detail="GPU Out of Memory.")
-                raise e
+                    self._cleanup(model, tokenizer)
+                    return current_summary
 
-    def meta_summarize(self, summary_a: str, summary_b: str, aggregator_model_id: str = "BioMistral/BioMistral-7B") -> str:
+                except Exception as e:
+                    print(f"Summarizer Critical Error: {e}")
+                    raise e
+            else:
+                try:
+                    model, tokenizer = self._load_model(model_id)
+
+                    pipe = pipeline(
+                        "text-generation",
+                        model=model,
+                        tokenizer=tokenizer,
+                        max_new_tokens=512,
+                        do_sample=False,
+                        temperature=0.1,
+                        repetition_penalty=1.2,
+                        return_full_text=False
+                    )
+
+                    # --- STATE: This holds the evolving summary ---
+                    current_summary = "No prior information."
+
+                    for i, chunk in enumerate(chunks):
+                        print(f"Processing chunk {i+1}/{len(chunks)} with {model_id} (Refine Step)...")
+
+                        # --- DYNAMIC PROMPT: Changes based on whether we have a summary yet ---
+                        if i == 0:
+                            # First chunk: Standard Extraction
+                            system_instruction = """You are an expert Clinical Documentation Specialist.
+
+                            GOAL: Extract key clinical data into a structured abstract.
+                            STRICT FORMAT:
+                            Demographics: [Age, Sex]
+                            Medical History: [Conditions, Meds, Allergies]
+                            Family History: [Conditions]
+                            Social History: [Lifestyle]
+                            Gynocological History: [If Female Patient or NA],
+                            History of Present Illness: [Symptoms, Timeline]"""
+
+                            user_message = f"PATIENT NOTE:\n{chunk}\n\nSUMMARY:"
+                        else:
+                            # Subsequent chunks: UPDATE the existing summary
+                            system_instruction = """You are an expert Clinical Documentation Specialist.
+                            GOAL: You are given an EXISTING SUMMARY and a NEW NOTE from a different doctor.
+                            INSTRUCTION: Update the Existing Summary with ONLY NEW information found in the New Note.
+                            - If the New Note repeats information already in the Summary, IGNORE IT.
+                            - Keep the same strict format.
+                            - Merge findings logically."""
+
+                            user_message = f"EXISTING SUMMARY:\n{current_summary}\n\nNEW NOTE:\n{chunk}\n\nUPDATED SUMMARY:"
+
+                        # Construct Prompt
+                        try:
+                            messages = [{"role": "system", "content": system_instruction}, {"role": "user", "content": user_message}]
+                            prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+                        except:
+                            prompt = f"[INST] {system_instruction}\n\n{user_message} [/INST]"
+
+                        # Generate
+                        output = pipe(prompt)[0]['generated_text'].strip()
+
+                        # Update the state variable with the new, refined summary
+                        if output:
+                            current_summary = output
+
+                    self._cleanup(model, tokenizer)
+                    return current_summary
+
+                except Exception as e:
+                    if "CUDA out of memory" in str(e):
+                        gc.collect()
+                        torch.cuda.empty_cache()
+                        raise HTTPException(status_code=503, detail="GPU Out of Memory.")
+                    raise e
+
+    def meta_summarize(self, summary_a: str, summary_b: str, aggregator_model_id: str = "mistralai/Mistral-7B-Instruct-v0.3") -> str:
         """
         Takes the two summaries and fuses them.
         """
@@ -212,7 +278,7 @@ class ClinicalSummarizer:
             "Family History": "String summary of hereditary conditions",
             "Social History": "String summary of lifestyle/substance use",
             "Physical Exam": "String summary of vitals and findings (or 'Not provided')",
-            "Diagnostics": "String summary of labs/imaging (or 'Not provided')"
+            "Diagnostics": "Previous diagnostics, labs, x-rays and other tests if available"
         }}
 
         RULES:
@@ -247,36 +313,32 @@ class MedicalSearchTool(BaseTool):
     description: str = "Useful for searching the web for clinical guidelines, medical definitions, and differential diagnoses."
 
     def _run(self, query: str) -> str:
-        """
-        CORRECT IMPLEMENTATION: Uses .text() instead of .invoke()
-        """
-        try:
-            print(f"🔎 Searching for: {query}") # Debug print
-            with DDGS() as ddgs:
-                # CRITICAL FIX: Use .text(), not .invoke()
-                results = list(ddgs.text(query, max_results=5))
-                
-                if not results:
-                    return "No search results found for this query."
+            try:
+                # Attempt the search
+                with DDGS() as ddgs:
+                    results = list(ddgs.text(query, max_results=4))
 
-                # Format results nicely for the LLM
-                formatted_results = []
-                for r in results:
-                    title = r.get('title', 'No Title')
-                    link = r.get('href', 'No Link')
-                    body = r.get('body', 'No Content')
-                    formatted_results.append(f"Title: {title}\nLink: {link}\nSnippet: {body}")
+                    # FIX 1: Handle empty results explicitly
+                    if not results:
+                        return "Search returned no results. Please rely on your internal medical knowledge for this section."
 
-                return "\n\n---\n\n".join(formatted_results)
+                    # FIX 2: Better formatting
+                    formatted_results = []
+                    for r in results:
+                        formatted_results.append(f"Title: {r.get('title')}\nSnippet: {r.get('body')}\nSource: {r.get('href')}")
 
-        except Exception as e:
-            return f"Error performing search: {str(e)}"
+                    return "\n\n".join(formatted_results)
+
+            except Exception as e:
+                # FIX 3: Catch library errors (like rate limits) so the Agent doesn't crash
+                print(f"Search Error: {e}")
+                return "Search tool is currently unavailable. Please proceed using your internal medical expertise and cite 'Internal Knowledge'."
 
 class DiagnosisCrew:
     def __init__(self):
         self.search_tool = MedicalSearchTool()
         self.llm = LLM(
-            model="gemini/gemini-2.0-flash",
+            model="gemini/gemini-2.5-flash",
             api_key=os.getenv("GEMINI_API_KEY"),
             safety_settings=[
                 {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
@@ -284,10 +346,12 @@ class DiagnosisCrew:
                 {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
                 {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
             ],
-            temperation=0.1
+            temperature=0.1
         )
 
     def run_diagnosis_search(self, clinical_summary: str):
+
+        # --- Agent 1: The Diagnostician ---
         medical_researcher = Agent(
         role='Senior Medical Diagnostician',
         goal=(
@@ -308,6 +372,24 @@ class DiagnosisCrew:
             llm=self.llm,
         )
 
+        # --- Agent 2: The Critic ---
+        medical_critic = Agent(
+            role='Expert Medical Review Board Critic',
+            goal='Critique the differential diagnosis for bias, likelihood, and missing perspectives. ' \
+            'Assign a 0-10 confidence score.',
+            backstory="""You are a world-renowned multi-disciplinary medical consultant (Dr. House archetype).
+            You review cases to ensure no rare disease is missed and that
+            common diseases aren't assumed without evidence.
+            You act as the quality control layer.
+            """,
+            verbose=True,
+            allow_delegation=False,
+            tools=[self.search_tool], # Critic can also search to verify claims
+            llm=self.llm,
+
+        )
+
+        # --- Task 1: Generate Diagnosis ---
         research_task = Task(
             description=f"""
                 Analyze the following Patient Case Summary:
@@ -342,9 +424,50 @@ class DiagnosisCrew:
             agent=medical_researcher,
             verbose=True
         )
+
+
+        # --- Task 2: Critique & Format (JSON Enforced) ---
+        critique_task = Task(
+            description=f"""
+            Review the Draft Diagnosis Report provided by the {medical_researcher} agent.
+
+            YOUR TASKS:
+            1. Evaluate each proposed diagnosis.
+            2. Assign a 'Critic Score' (0-10) based on how well the evidence fits.
+            3. Provide a 'Critic Explanation' for your score.
+            4. REVIEW the 'Recommended Next Steps'. Assign a score (0-10) to each step's relevance and explain why.
+            5. Only use reputable medical journals, websites and resources.
+
+            STRICT OUTPUT: Return ONLY a valid JSON object with this exact structure:
+            {{
+                "patient_summary": "One sentence summary of the patient context",
+                "differential_diagnoses": [
+                    {{
+                        "name": "Diagnosis Name",
+                        "likelihood": "High/Medium/Low",
+                        "rationale": "Medical reasoning...",
+                        "critic_score": 8,
+                        "critic_explanation": "Why this score..."
+                    }}
+                ],
+                "red_flags": ["Flag 1", "Flag 2"],
+                "risk_factors": ["Factor 1", "Factor 2"],
+                "recommended_next_steps": [
+                    {{
+                        "name": "Step Name (e.g., MRI)",
+                        "critic_score": 9,
+                        "critic_explanation": "Why this is critical"
+                    }}
+                ]
+            }}
+            """,
+            expected_output="A valid json object",
+            agent=medical_critic,
+            verbose=True
+        )
         crew = Crew(
-            agents=[medical_researcher],
-            tasks=[research_task],
+            agents=[medical_researcher, medical_critic],
+            tasks=[research_task, critique_task],
             process=Process.sequential,
             verbose=True
         )
@@ -372,19 +495,28 @@ async def lifespan(app: FastAPI):
     torch.cuda.empty_cache()
 
 # ==============================================================================
-# 3. FASTAPI APP SETUP
+# 2. APP SETUP
 # ==============================================================================
 
+processor = ClinicalDataProcessor()
+summarizer = ClinicalSummarizer()
+diagnosis_crew = DiagnosisCrew()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("🚀 Server Starting...")
+    if os.path.exists("patient_notes.csv"):
+        try: processor.load_data("patient_notes.csv")
+        except Exception as e: print(f"⚠️ Could not auto-load data: {e}")
+    yield
+    print("🛑 Server Stopping...")
+    gc.collect()
+    torch.cuda.empty_cache()
+
 app = FastAPI(title="MediMind API", lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+# --- MODELS ---
 class SummaryRequest(BaseModel):
     case_num: int
     patient_limit: Optional[int] = 5
@@ -392,9 +524,19 @@ class SummaryRequest(BaseModel):
 class DiagnosisRequest(BaseModel):
     clinical_summary: str
 
-@app.get("/")
-def read_root():
-    return {"status": "online", "message": "MediMind RAG API Ready"}
+# ==============================================================================
+# 3. ENDPOINTS
+# ==============================================================================
+
+# --- NEW: Serve the UI directly ---
+@app.get("/", response_class=HTMLResponse)
+def serve_ui():
+    """Serves the index.html file directly on localhost:8000"""
+    try:
+        with open("index.html", "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return "<h1>Error: index.html not found.</h1><p>Please ensure index.html is in the same folder as app.py</p>"
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
@@ -420,45 +562,25 @@ def preview_case(case_num: int, limit: int = 5):
 
 @app.post("/summarize")
 def run_summarization(req: SummaryRequest):
-    """STEP 1: Run Multi-Model Summarization"""
     try:
-        print(f"Request received for Case {req.case_num}")
         raw_text = processor.get_combined_notes(req.case_num, req.patient_limit)
         if not raw_text: raise HTTPException(status_code=404, detail="No notes found.")
-
         chunks = processor.smart_chunking(raw_text)
-        print(f"Created {len(chunks)} chunks")
 
-        # Model A: BioMistral-7B
-        print("Running Model A (BioMistral)...")
         summary_a = summarizer.summarize_chunks(chunks, "BioMistral/BioMistral-7B")
-        
-        # Model B: Llama3-Med42-8B
-        print("Running Model B (Med42)...")
-        # Note: Ensure you have accepted the license for m42-health/Llama3-Med42-8B
         summary_b = summarizer.summarize_chunks(chunks, "m42-health/Llama3-Med42-8B")
+        summary_final = summarizer.meta_summarize(summary_a, summary_b, aggregator_model_id='mistralai/Mistral-7B-Instruct-v0.3')
 
-        # Meta-Summarizer: Mistral-7B-Instruct-v0.3
-        print("Running Meta-Summarizer...")
-        summary_final = summarizer.meta_summarize(summary_a, summary_b, "mistralai/Mistral-7B-Instruct-v0.3")
-        
-        return {
-            "summary_a": summary_a,
-            "summary_b": summary_b,
-            "summary_final": summary_final
-        }
-
+        return {"summary_a": summary_a, "summary_b": summary_b, "summary_final": summary_final}
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Summarization Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/diagnose")
 def run_diagnosis(req: DiagnosisRequest):
-    """STEP 2: Run Agent Diagnosis on the Summary"""
     try:
-        print("Starting Agent Diagnosis...")
         result = diagnosis_crew.run_diagnosis_search(req.clinical_summary)
         return {"diagnosis_report": str(result)}
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Diagnosis Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
