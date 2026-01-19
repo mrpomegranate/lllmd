@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediMind RAG - Clinical Intelligence</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; }
+        .fade-in { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* Sticky Sidebar for Final Report */
+        .sticky-sidebar { position: sticky; top: 100px; }
+
+        /* Score Gradients */
+        .score-high { background: linear-gradient(135deg, #dcfce7 0%, #ffffff 100%); border-left: 4px solid #22c55e; }
+        .score-med { background: linear-gradient(135deg, #fef9c3 0%, #ffffff 100%); border-left: 4px solid #eab308; }
+        .score-low { background: linear-gradient(135deg, #fee2e2 0%, #ffffff 100%); border-left: 4px solid #ef4444; }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <nav class="fixed top-0 left-0 right-0 bg-white/80 backdrop-blur-md border-b border-slate-200 z-40">
+        <div class="max-w-7xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 bg-blue-600 rounded flex items-center justify-center text-white shadow-sm">
+                    <i data-lucide="activity" class="w-5 h-5"></i>
+                </div>
+                <span class="text-lg font-bold text-slate-900 tracking-tight">MediMind<span class="text-blue-600">RAG</span></span>
+            </div>
+            <div id="server-status" class="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 flex items-center gap-1.5 transition-colors">
+                <span class="w-2 h-2 rounded-full bg-slate-400"></span> Connecting...
+            </div>
+        </div>
+    </nav>
+
+    <main id="app-root" class="max-w-7xl mx-auto pt-24 pb-12 px-4 md:px-8 min-h-screen">
+    </main>
+
+    <script>
+        const API_URL = "http://127.0.0.1:8000";
+
+        const state = {
+            step: 1,
+            cases: [],
+            selectedCase: null,
+            previewData: [],
+            summaries: null,
+            diagnosisData: null,
+            isLoading: false,
+            loadingMsg: "Processing..."
+        };
+
+        // --- 1. Helper Functions ---
+
+        function formatJsonSummary(jsonStr) {
+            try {
+                const firstBrace = jsonStr.indexOf('{');
+                const lastBrace = jsonStr.lastIndexOf('}');
+                if (firstBrace === -1 || lastBrace === -1) throw new Error("No JSON found");
+
+                const cleanJson = jsonStr.substring(firstBrace, lastBrace + 1);
+                const data = JSON.parse(cleanJson);
+
+                const renderSection = (title, icon, content, colorClass = "bg-white") => {
+                    if (!content || content === "Not provided" || content === "NA") return '';
+                    const text = Array.isArray(content) 
+                        ? `<ul class="list-disc list-inside space-y-1">${content.map(i => `<li>${i}</li>`).join('')}</ul>` 
+                        : content;
+                    return `
+                        <div class="${colorClass} p-4 rounded-xl border border-slate-200 shadow-sm">
+                            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-2">
+                                <i data-lucide="${icon}" class="w-4 h-4"></i> ${title}
+                            </h4>
+                            <div class="text-sm text-slate-800 leading-relaxed">${text}</div>
+                        </div>
+                    `;
+                }
+
+                return `
+                    <div class="space-y-3">
+                        <div class="bg-slate-800 text-white p-4 rounded-xl shadow-md flex items-center gap-3">
+                            <div class="bg-white/20 p-2 rounded-lg"><i data-lucide="user" class="w-6 h-6"></i></div>
+                            <div>
+                                <div class="text-xs text-blue-200 font-medium uppercase">Patient Context</div>
+                                <div class="text-lg font-bold">${data.Demographics || "Unknown"}</div>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                             ${renderSection("History of Present Illness", "activity", data["History of Present Illness"] || data["HPI"], "bg-blue-50 border-blue-100 col-span-1 md:col-span-2")}
+                             ${renderSection("Medical History", "file-heart", data["Medical History"] || data["PMH"])}
+                             ${renderSection("Family History", "users", data["Family History"])}
+                             ${renderSection("Social History", "coffee", data["Social History"])}
+                             ${renderSection("Gynocological History", "baby", data["Gynocological History"])}
+                             ${renderSection("Physical Exam", "stethoscope", data["Physical Exam"])}
+                             ${renderSection("Diagnostics", "microscope", data["Diagnostics"])}
+                        </div>
+                    </div>
+                `;
+            } catch (e) {
+                console.error("JSON Context Error:", e);
+                return `<div class="text-red-500 text-xs">Error parsing summary context.</div>`;
+            }
+        }
+
+        // --- UPDATED TEXT FORMATTER (Structure Detection) ---
+        function formatTextSummary(text) {
+            // Safety Check
+            if (!text || typeof text !== 'string') return '<span class="text-slate-400 italic">No summary data available.</span>';
+
+            try {
+                // Define known headers
+                const headers = [
+                    "Demographics", "Medical History", "Family History", "Social History",
+                    "Gyne?colog[a-z]*\\s*History", "Gyn\\s*History", "Ob\\/Gyn\\s*History",
+                    "History of Present Illness", "HPI", "Physical Exam", "Diagnostics"
+                ];
+
+                // Check if the text actually looks structured (contains at least one header)
+                // This regex looks for a header followed by a colon
+                const headerRegex = new RegExp(`(?:^|\\n|\\*\\*|##)\\s*(${headers.join("|")})[:\\s]`, 'i');
+                const isStructured = headerRegex.test(text);
+
+                let formatted = text;
+
+                // ONLY apply "Smart Formatting" if we detected structure
+                if (isStructured) {
+
+                    // 1. Safe Gender Detection
+                    const demoSection = formatted.substring(0, 300).toLowerCase();
+                    const isMale = /\b(male|man|boy|he|his)\b/.test(demoSection);
+
+                    // 2. Check for Gyn history
+                    const gynRegex = /(Gyne?colog[a-z]*\s*History|Gyn\s*History|Ob\/Gyn\s*History|Reproductive\s*History)/i;
+                    const hasGyn = gynRegex.test(formatted);
+
+                    // 3. Inject Missing Section safely
+                    if (!hasGyn) {
+                        if (isMale) {
+                            formatted += "\n\nGynecological History: Not applicable (Male Patient)";
+                        } else {
+                            formatted += "\n\nGynecological History: Not recorded in these notes";
+                        }
+                    }
+
+                    // 4. Highlight Headers
+                    const headerPattern = new RegExp(`(?:^|\\n|\\*\\*|##)\\s*(${headers.join("|")})[:\\s]*(?=\\n|\\s|\\*)`, 'gi');
+                    formatted = formatted.replace(headerPattern, (match, p1) => {
+                        return `<strong class="text-blue-700 block mt-3 mb-1">${p1}:</strong>`;
+                    });
+                }
+
+                // For unstructured blobs (BioMistral), we just swap newlines for breaks
+                return formatted.replace(/\n/g, '<br>');
+
+            } catch (e) {
+                console.error("Formatter crashed:", e);
+                return text.replace(/\n/g, '<br>');
+            }
+        }
+
+        // --- 2. RENDER SUB-COMPONENTS ---
+
+        function renderDiagnosisCard(dx) {
+            let scoreColor = "text-red-600 bg-red-50 border-red-100";
+            let cardClass = "score-low";
+            let icon = "alert-circle";
+
+            const score = dx.critic_score || dx.critique_score || dx.score || 0;
+            const explanation = dx.critic_explanation || dx.criticque_explamantion || dx.rationale || "";
+
+            if (score >= 8) {
+                scoreColor = "text-emerald-600 bg-emerald-50 border-emerald-100";
+                cardClass = "score-high";
+                icon = "check-circle-2";
+            } else if (score >= 5) {
+                scoreColor = "text-yellow-600 bg-yellow-50 border-yellow-100";
+                cardClass = "score-med";
+                icon = "alert-triangle";
+            }
+            return `
+                <div class="${cardClass} rounded-xl p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow relative overflow-hidden group">
+                    <div class="flex flex-col gap-4">
+                        <div class="flex items-start justify-between">
+                            <div class="flex items-center gap-2">
+                                <h3 class="text-lg font-bold text-slate-900">${dx.name}</h3>
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-white shadow-sm">${dx.likelihood} Probability</span>
+                            </div>
+                            <div class="flex items-center gap-2 bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-sm">
+                                <div class="${scoreColor} w-6 h-6 rounded-full flex items-center justify-center border text-[10px]">
+                                    <i data-lucide="${icon}" class="w-3 h-3"></i>
+                                </div>
+                                <div class="text-xs font-bold text-slate-600">Score: ${score}/10</div>
+                            </div>
+                        </div>
+
+                        <p class="text-sm text-slate-700 leading-relaxed">${dx.rationale}</p>
+
+                        <div class="text-xs text-slate-500 italic bg-white/60 p-3 rounded-lg border border-slate-100 flex gap-2">
+                            <i data-lucide="message-square" class="w-4 h-4 shrink-0 mt-0.5 text-slate-400"></i>
+                            <span><strong>Critic's Note:</strong> ${explanation}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderNextSteps(steps) {
+            if (!steps || steps.length === 0) return '<li class="text-slate-500 italic">None provided</li>';
+
+            return steps.map(s => {
+                if (typeof s === 'string') {
+                    return `<li class="text-xs text-slate-300 flex items-start gap-2"><i data-lucide="arrow-right" class="w-3 h-3 mt-0.5 shrink-0 text-blue-400"></i>${s}</li>`;
+                }
+
+                const name = s.name || s.step || s.recommendation || "Step";
+                const score = s.critic_score || s.critique_score || s.score || "?";
+                const expl = s.critic_explanation || s.criticque_explamantion || s.explanation || s.rationale || "";
+
+                let dotColor = "bg-blue-400";
+                const scoreNum = parseInt(score);
+                if (!isNaN(scoreNum)) {
+                    if(scoreNum < 5) dotColor = "bg-red-400";
+                    else if(scoreNum >= 8) dotColor = "bg-emerald-400";
+                }
+
+                return `
+                <li class="bg-slate-800 p-3 rounded-lg border border-slate-700">
+                    <div class="flex justify-between items-start mb-1">
+                        <span class="text-sm font-bold text-slate-200 flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full ${dotColor}"></span> ${name}
+                        </span>
+                        <span class="text-[10px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded">Score: ${score}</span>
+                    </div>
+                    <p class="text-[10px] text-slate-400 italic leading-tight">"${expl}"</p>
+                </li>`;
+            }).join('');
+        }
+
+        // --- 3. MAIN RENDERERS ---
+
+        function renderSummaryView() {
+            return `
+                <div class="space-y-6 fade-in pb-12">
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex justify-between items-center sticky top-20 z-30">
+                        <div>
+                            <h2 class="text-xl font-bold text-slate-900">Multi-Model Analysis</h2>
+                            <p class="text-sm text-slate-500">Comparing extractions from BioMistral and Med42</p>
+                        </div>
+                        <button onclick="runDiagnosis()" class="bg-emerald-600 text-white px-6 py-3 rounded-xl font-medium shadow-lg shadow-emerald-100 hover:bg-emerald-700 flex items-center gap-2 transition-all hover:scale-105">
+                            <i data-lucide="stethoscope" class="w-5 h-5"></i> Run Diagnostic Agent
+                        </button>
+                    </div>
+
+                    <div class="grid lg:grid-cols-3 gap-6">
+                        <div class="flex flex-col gap-4">
+                            <div class="flex items-center gap-2 text-sm font-bold text-slate-500 uppercase tracking-wider">
+                                <span class="w-2 h-2 rounded-full bg-indigo-500"></span> BioMistral-7B
+                            </div>
+                            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm text-sm text-slate-600 leading-relaxed h-full">
+                                ${formatTextSummary(state.summaries.summary_a)}
+                            </div>
+                        </div>
+
+                        <div class="flex flex-col gap-4">
+                             <div class="flex items-center gap-2 text-sm font-bold text-slate-500 uppercase tracking-wider">
+                                <span class="w-2 h-2 rounded-full bg-purple-500"></span> Llama3-Med42
+                            </div>
+                            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm text-sm text-slate-600 leading-relaxed h-full">
+                                ${formatTextSummary(state.summaries.summary_b)}
+                            </div>
+                        </div>
+
+                        <div class="flex flex-col gap-4">
+                            <div class="flex items-center gap-2 text-sm font-bold text-slate-500 uppercase tracking-wider">
+                                <span class="w-2 h-2 rounded-full bg-blue-600"></span> Consensus Meta-Summary
+                            </div>
+                            ${formatJsonSummary(state.summaries.summary_final)}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderFinalReport() {
+            const data = state.diagnosisData;
+
+            let report = data;
+            if (typeof data === 'string') {
+                try {
+                    const clean = data.replace(/```json/g, '').replace(/```/g, '').trim();
+                    report = JSON.parse(clean);
+                } catch(e) {
+                    return `<div class="p-8 bg-white border border-slate-200 rounded-xl whitespace-pre-wrap font-mono text-sm">${data}</div>`;
+                }
+            }
+
+            return `
+                <div class="fade-in pb-24 space-y-8">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h1 class="text-2xl font-bold text-slate-900">Clinical Decision Support Report</h1>
+                            <p class="text-slate-500 mt-1">Multi-Agent Consensus & Risk Analysis</p>
+                        </div>
+                        <button onclick="state.step=2; updateView()" class="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 shadow-sm">
+                            New Analysis
+                        </button>
+                    </div>
+
+                    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                         <div class="p-4 bg-slate-50 border-b border-slate-200 flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-500">
+                            <i data-lucide="file-text" class="w-4 h-4"></i> Patient Context
+                         </div>
+                         <div class="p-2">
+                            ${formatJsonSummary(state.summaries.summary_final)}
+                         </div>
+                    </div>
+
+                    <div class="grid lg:grid-cols-12 gap-8 items-start">
+                        <div class="lg:col-span-8 space-y-6">
+                            <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2 px-1">
+                                <i data-lucide="stethoscope" class="text-blue-600"></i> Differential Diagnoses & Critique
+                            </h2>
+                            <div class="space-y-4">
+                                ${report.differential_diagnoses ? report.differential_diagnoses.map(renderDiagnosisCard).join('') : 'No diagnoses generated.'}
+                            </div>
+                        </div>
+
+                        <div class="lg:col-span-4 space-y-6 sticky-sidebar">
+
+                            <div class="bg-red-50 border border-red-100 rounded-2xl p-5 shadow-sm">
+                                <h3 class="text-red-800 font-bold flex items-center gap-2 mb-3">
+                                    <i data-lucide="alert-octagon" class="w-4 h-4"></i> Red Flags
+                                </h3>
+                                <ul class="space-y-2">
+                                    ${report.red_flags ? report.red_flags.map(f => `<li class="text-xs text-red-700 flex items-start gap-2"><span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span>${f}</li>`).join('') : '<li>None identified</li>'}
+                                </ul>
+                            </div>
+
+                            <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                                <h3 class="text-slate-800 font-bold flex items-center gap-2 mb-3">
+                                    <i data-lucide="activity" class="w-4 h-4 text-slate-400"></i> Risk Factors
+                                </h3>
+                                <div class="flex flex-wrap gap-2">
+                                    ${report.risk_factors ? report.risk_factors.map(r => `<span class="bg-slate-100 text-slate-600 text-xs px-2 py-1 rounded-md font-medium border border-slate-200">${r}</span>`).join('') : 'None'}
+                                </div>
+                            </div>
+
+                            <div class="bg-slate-900 text-white rounded-2xl p-5 shadow-lg">
+                                <h3 class="font-bold flex items-center gap-2 mb-3">
+                                    <i data-lucide="check-square" class="w-4 h-4 text-blue-300"></i> Clinical Recommendations
+                                </h3>
+                                <ul class="space-y-3">
+                                    ${renderNextSteps(report.recommended_next_steps)}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // --- 4. API Logic ---
+
+        async function checkServer() {
+            try {
+                await fetch(API_URL);
+                const el = document.getElementById('server-status');
+                el.className = "text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 flex items-center gap-1.5";
+                el.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> System Online';
+            } catch (e) {
+                const el = document.getElementById('server-status');
+                el.className = "text-xs font-medium px-2.5 py-1 rounded-full bg-red-50 text-red-700 border border-red-100 flex items-center gap-1.5";
+                el.innerHTML = '<span class="w-2 h-2 rounded-full bg-red-500"></span> Offline';
+            }
+        }
+
+        async function uploadFile(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+            try {
+                setLoading(true, "Securely Uploading & Parsing Data...");
+                const res = await fetch(`${API_URL}/upload`, { method: 'POST', body: formData });
+                if (!res.ok) throw new Error("Upload failed");
+
+                const casesRes = await fetch(`${API_URL}/cases`);
+                const casesData = await casesRes.json();
+                state.cases = casesData.cases;
+                state.selectedCase = state.cases[0];
+                await fetchPreview(state.selectedCase);
+                state.step = 2;
+            } catch (e) { alert(e.message); } finally { setLoading(false); updateView(); }
+        }
+
+        async function fetchPreview(caseNum) {
+            const res = await fetch(`${API_URL}/cases/${caseNum}?limit=1000`);
+            const data = await res.json();
+            state.previewData = data.data;
+            state.selectedCase = caseNum;
+            updateView();
+        }
+
+        async function runSummarization() {
+            state.step = 3;
+            setLoading(true, "Generating Multi-Model Summaries...");
+            updateView();
+            try {
+                const res = await fetch(`${API_URL}/summarize`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ case_num: state.selectedCase, patient_limit: 1000 })
+                });
+                if (!res.ok) throw new Error("Summarization failed");
+                state.summaries = await res.json();
+                state.step = 4;
+            } catch (e) { alert("Error: " + e.message); state.step = 2; } finally { setLoading(false); updateView(); }
+        }
+
+        async function runDiagnosis() {
+            state.step = 5;
+            setLoading(true, "Expert Agents (Diagnostician & Critic) are analyzing...");
+            updateView();
+            try {
+                const res = await fetch(`${API_URL}/diagnose`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ clinical_summary: state.summaries.summary_final })
+                });
+                if (!res.ok) throw new Error("Diagnosis failed");
+                const data = await res.json();
+                state.diagnosisData = data.diagnosis_report;
+                state.step = 6;
+            } catch (e) { alert(e.message); state.step = 4; } finally { setLoading(false); updateView(); }
+        }
+
+        function setLoading(active, msg) {
+            state.isLoading = active;
+            state.loadingMsg = msg;
+            updateView();
+        }
+
+        function renderLoading() {
+            return `
+                <div class="absolute inset-0 bg-white/90 backdrop-blur-sm z-50 flex flex-col items-center justify-center fade-in rounded-2xl">
+                    <div class="relative mb-6">
+                        <div class="w-16 h-16 rounded-full border-4 border-slate-100 border-t-blue-600 animate-spin"></div>
+                    </div>
+                    <h3 class="text-xl font-bold text-slate-900 mb-2">${state.loadingMsg}</h3>
+                    <p class="text-slate-500 font-medium">Coordinating AI Agents...</p>
+                </div>
+            `;
+        }
+
+        function renderUpload() {
+            return `
+                <div class="max-w-xl mx-auto mt-12 text-center fade-in">
+                    <div class="bg-white rounded-2xl border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50/30 transition-all cursor-pointer p-12 group shadow-sm" onclick="document.getElementById('csvInput').click()">
+                        <input type="file" id="csvInput" class="hidden" accept=".csv" onchange="handleFileSelect(this)">
+                        <div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
+                            <i data-lucide="upload-cloud" class="w-8 h-8"></i>
+                        </div>
+                        <h2 class="text-2xl font-bold text-slate-900 mb-2">Upload Patient Records</h2>
+                        <button class="bg-slate-900 text-white px-6 py-3 rounded-xl font-medium shadow mt-4">Select File</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderReview() {
+            const options = state.cases.map(c => `<option value="${c}" ${c===state.selectedCase?'selected':''}>Case ${c}</option>`).join('');
+            const rows = state.previewData.map(r => `
+                <tr class="border-b border-slate-100 hover:bg-slate-50">
+                    <td class="py-3 px-4 w-24 text-xs font-mono text-slate-500">${r.pn_num}</td>
+                    <td class="py-3 px-4 text-sm text-slate-700 whitespace-pre-wrap">${r.pn_history}</td>
+                </tr>
+            `).join('');
+
+            return `
+                <div class="fade-in space-y-4">
+                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex justify-between items-center">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="folder" class="text-blue-600"></i>
+                            <select onchange="fetchPreview(parseInt(this.value))" class="font-bold text-slate-700 bg-transparent outline-none cursor-pointer hover:text-blue-600">${options}</select>
+                        </div>
+                        <button onclick="runSummarization()" class="bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 flex items-center gap-2">
+                            <i data-lucide="sparkles" class="w-4 h-4"></i> Generate Summaries
+                        </button>
+                    </div>
+                    <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                        <div class="overflow-x-auto max-h-[70vh]">
+                            <table class="w-full text-left">
+                                <thead class="bg-slate-50 border-b border-slate-200 sticky top-0"><tr><th class="py-2 px-4 text-xs text-slate-500 uppercase">ID</th><th class="py-2 px-4 text-xs text-slate-500 uppercase">Narrative</th></tr></thead>
+                                <tbody>${rows}</tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function updateView() {
+            const root = document.getElementById('app-root');
+            if (state.isLoading) {
+                if (!document.getElementById('loading-overlay')) {
+                    const overlay = document.createElement('div');
+                    overlay.id = 'loading-overlay';
+                    overlay.innerHTML = renderLoading();
+                    root.style.position = 'relative';
+                    root.appendChild(overlay.firstElementChild);
+                }
+            } else {
+                if (state.step === 1) root.innerHTML = renderUpload();
+                else if (state.step === 2) root.innerHTML = renderReview();
+                else if (state.step === 4) root.innerHTML = renderSummaryView();
+                else if (state.step === 6) root.innerHTML = renderFinalReport();
+            }
+            lucide.createIcons();
+        }
+
+        function handleFileSelect(input) {
+            if (input.files && input.files[0]) uploadFile(input.files[0]);
+        }
+
+        checkServer();
+        updateView();
+    </script>
+</body>
+</html>
